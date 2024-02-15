@@ -1,128 +1,31 @@
-# YAML representation of the provided Bash script
+name: Deploy to GitHub Pages
 
-script: |
-  #!/bin/bash
+on:
+  push:
+    branches:
+      - main
 
-  # Function to update an .env file
-  update_env_file() {
-    local env_file=$1
-    local key=$2
-    local value=$3
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-    # Check if the file exists
-    if [ ! -f "${env_file}" ]; then
-      print_red "${env_file} not found. Exiting."
-      exit 1
-    fi
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    # Escape special characters in value
-    value=$(echo "$value" | sed -e 's/[\/&]/\\&/g')
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
 
-    # Check if key exists in file
-    if grep -q "^${key}=" "${env_file}"; then
-      # Key found, update its value
-      sed -i "s/^${key}=.*/${key}=${value}/" "${env_file}"
-      if [ $? -ne 0 ]; then
-        print_red "Failed to update ${key} in ${env_file}. Exiting."
-        exit 1
-      fi
-    else
-      # Key not found, do nothing (or you could choose to append it)
-      print_yellow "Key ${key} not found in ${env_file}. Skipping."
-    fi
-  }
+      - name: Install dependencies
+        run: npm install
 
-  prepare_env_file() {
-    local example_file=$1
-    local env_file=$2
+      - name: Build project
+        run: npm run build
 
-    if [ ! -f "${env_file}" ]; then
-      if [ -f "${example_file}" ]; then
-        cp "${example_file}" "${env_file}"
-      else
-        print_red "${example_file} not found. Please make sure it exists."
-        exit 1
-      fi
-    fi
-  }
-
-  # Function to update .env with new port
-  update_db_port_in_env() {
-    local new_port=$1
-    local database_url=$(grep "DATABASE_URL=" .env | cut -d '=' -f2-)
-    local regex="mysql:\/\/([^:]+):([^@]+)@([^:]+):([^\/]+)\/(.+)"
-    if [[ $database_url =~ $regex ]]; then
-      local new_database_url="mysql://${BASH_REMATCH[1]}:${BASH_REMATCH[2]}@${BASH_REMATCH[3]}:${new_port}/${BASH_REMATCH[5]}"
-      update_env_file ".env" "DATABASE_URL" "${new_database_url}"
-    else
-      echo "Could not parse DATABASE_URL"
-    fi
-  }
-
-  read_from_env() {
-    local env_file=$1
-    local key=$2
-    grep "^${key}=" "${env_file}" | cut -d '=' -f2
-  }
-
-  # Function to parse DATABASE_URL from .env file
-  parse_database_url() {
-    local env_file=$1
-    local url=$(grep "DATABASE_URL=" ${env_file} | cut -d '=' -f2-)
-
-    # Extract username, password, host, port, and db name using regex
-    local regex="mysql:\/\/([^:]+):([^@]+)@([^:]+):([^\/]+)\/(.+)"
-    if [[ $url =~ $regex ]]; then
-      echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]} ${BASH_REMATCH[4]} ${BASH_REMATCH[5]}"
-    else
-      echo "Could not parse DATABASE_URL"
-    fi
-  }
-
-  # Function to print yellow text
-  print_yellow() {
-    echo -e "\e[33m$1\e[0m"
-  }
-
-  # Function to print red text
-  print_red() {
-    echo -e "\e[31m$1\e[0m"
-  }
-
-  # Function to print green text
-  print_green() {
-    echo -e "\e[32m$1\e[0m"
-  }
-
-  # check for root user
-  if [ "$EUID" -ne 0 ]; then
-    print_red "This script must be run as root. Exiting."
-    exit 1
-  fi
-
-  # Check for RAM requirements
-  total_ram=$(free -m | awk '/^Mem:/{print $2}')
-  if [ "$total_ram" -lt 3072 ]; then
-    print_red "Insufficient RAM. You need at least 4GB to proceed."
-    exit 1
-  fi
-
-  # NodeJS Installation
-  if command -v apt > /dev/null 2>&1; then
-    # Commands for distributions that use apt package manager (like Ubuntu, Debian)
-    sudo apt-get update
-    sudo apt-get upgrade -y
-    sudo apt-get install -y ca-certificates curl gnupg
-    sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-    sudo apt-get update
-    sudo apt-get install nodejs -y
-
-    # Redis Installation for apt
-    sudo apt-get install -y redis-server
-    sudo systemctl enable redis-server
-    sudo systemctl start redis-server
-
-  elif command -v yum > /dev/null 2>&1; then
-    # Commands for distributions that use yum package manager (like CentOS, RHEL, AlmaLinux)
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .app/.output
